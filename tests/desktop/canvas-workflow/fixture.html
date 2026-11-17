@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<meta charset="utf-8">
+<title>Canvas test fixture</title>
+<style>
+body { margin: 0; background: #172235; color: white; font: 16px sans-serif; }
+.navigation { height: 64px; padding: 12px; box-sizing: border-box; background: rgb(30, 45, 65); }
+button { padding: 8px 20px; background: rgb(20, 40, 60); color: white; border: 1px solid #8396ae; }
+button:hover { background: rgb(200, 80, 40); }
+#menu-popup { position: absolute; top: 60px; left: 12px; padding: 20px; background: #33445c; }
+main { padding: 24px; }
+</style>
+<nav class="navigation"><button aria-label="Menu" aria-expanded="false">Menu</button></nav>
+<div id="menu-popup" hidden>Fixture menu</div>
+<main><h1>Canvas fixture</h1><p>Generic content for viewport and inspector checks.</p></main>
+<script>
+const button = document.querySelector('button');
+button.addEventListener('click', () => {
+  const expanded = button.getAttribute('aria-expanded') !== 'true';
+  button.setAttribute('aria-expanded', String(expanded));
+  document.querySelector('#menu-popup').hidden = !expanded;
+});
+</script>
+</html>

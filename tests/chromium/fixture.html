@@ -1,0 +1,8 @@
+<!doctype html><style>body{background:#fff}button,input{display:block;width:200px;height:40px}@media(max-width:500px){body{background:#0f0}}</style><button onclick="this.textContent=Number(this.textContent)+1">0</button><input aria-label="text">
+
+<select id="choice"><option>First option</option><option>Second option</option><option>Third option</option></select>
+<output id="metrics" style="display:block;overflow-wrap:anywhere"></output>
+<script>
+function metrics(){document.querySelector('#metrics').textContent=JSON.stringify({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,dense:matchMedia('(min-resolution: 2dppx)').matches,choice:document.querySelector('#choice').value})}
+addEventListener('resize',metrics);document.querySelector('#choice').addEventListener('change',metrics);metrics();
+</script>

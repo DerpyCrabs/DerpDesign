@@ -1,0 +1,7 @@
+<!doctype html><html><head><style>body{background:#173755;color:white;font:20px sans-serif}button{padding:16px;background:#80c899}</style></head><body><h1>CLI verification</h1><button id="counter" onclick="this.textContent=String(Number(this.textContent)+1)">0</button><input id="notes" aria-label="Notes" oninput="document.getElementById('echo').textContent=this.value"><span id="echo"></span>
+<div id="drag" style="display:inline-block;padding:12px;background:#555">Drag</div><div id="drop" style="display:inline-block;padding:12px;background:#555">Target</div>
+<script>
+let dragging=false;
+document.getElementById('drag').addEventListener('pointerdown',()=>dragging=true);
+document.addEventListener('pointerup',e=>{if(dragging&&e.target.id==='drop')e.target.textContent='Dropped';dragging=false;});
+window.__DERPDESIGN__={ready:true}</script></body></html>

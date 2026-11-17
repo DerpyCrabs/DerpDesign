@@ -1,0 +1,21 @@
+# Integrating a project
+
+Inspect its AGENTS.md, package manifest, compiler/build configuration and closest existing fixture or component mount. Prefer repository-owned demos (for example `demos/derpdesign/`) when the project owns them or the user requests migration. Set `supportRoot` to that absolute directory; the runtime accepts support directories outside DerpDesign. Keep project-specific support code in the target repository or an external directory; DerpDesign retains only generic test fixtures. Import `@derpdesign/harness` as a package instead of reaching into DerpDesign internals.
+
+A support package normally contains a dev-server entry/config, HTML root, mount entry, demos and mocks. Import the actual target components/controllers and CSS. Resolve dependencies from the target project; use its compatible Effect/EffectWeb/compiler versions, avoiding duplicate runtime instances. Register the project through MCP with absolute sourceRoot/supportRoot and a server command argument array/cwd/URL. Machine-specific absolute paths belong in local registration or environment, not committed demo fixtures.
+
+For Vite, use an external config/entry and allow imports from the source checkout. Preserve required target compiler, aliases and style plugins. Prefer importing the target application root with a supplied environment, or component views with props/model/services. For tightly coupled startup, install mocks before importing the entry or use targeted module substitution/transforms. Never copy a real component into the fixture; then edits would fix only the demo.
+
+EffectWeb mounts can use `mount` or scoped `makeMount`; inspect the project's version and conventions. Dispose owned scopes/resources on reset. Mock Effect services at their actual dependency boundary.
+
+Each scenario should establish deterministic data and needed stateful behavior. Reuse a project’s existing fixture before making another mock. Unsupported mock commands should throw with their name; extend the fixture when a scenario needs another command rather than adding a silent catch-all. Expose `window.__DERPDESIGN__ = {ready:false}` before mounting; set ready only when the intended state is rendered, and expose error on failed setup. A reset hook can restore fixture state. Avoid arbitrary sleeps as the scenario definition. Load/error/empty states are intentional scenarios, not accidental unavailable backends. Do not reach real personal accounts for fixture data.
+
+Create demos with stable IDs and pane records: id, name, engine (`chromium` or `ladybird`), viewport {width,height,deviceScaleFactor}, position {x,y}, route beginning `/`, and JSON conditions. Route the scenario through the harness URL; verify how conditions are delivered rather than assuming a global. Use independent pane state/storage. Include both engines in the finished integration when supported; report real engine failures rather than hide them.
+
+Activate through `selection_set` in the owned headless workspace. Register the finished demo as inactive for desktop review; do not launch, focus, or change the user’s desktop selection unless explicitly requested. Inspect/capture actual panes and exercise meaningful interactions. Integration is complete only when original-source edits appear in the panes through normal dev-server updates/reload and the MCP feedback loop works. Report demo IDs, tested engines/scenarios, artifacts and limitations.
+
+DerpDesign adds a `__derp_conditions` JSON query parameter to each pane URL. Import `runScenario` from `@derpdesign/harness` in demo code to read conditions, publish readiness/errors, await fonts/paint, and provide reset/cleanup. Its setup callback receives `{conditions, signal}` and can return a cleanup function. This helper does not supply or replace project runtime dependencies.
+
+Use `deviceScaleFactor: "display"` for ordinary interactive demos: the desktop resolves it to its screen density, keeping 100% at screen scale with sharp engine output. Use a positive number only when testing a specific emulated density.
+
+Choose pane engines from the target application's actual rendering environment. Ladybird-only applications get Ladybird panes only; do not add Chromium as a comparison engine by default. General web apps may use both where relevant.

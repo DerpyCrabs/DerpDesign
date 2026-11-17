@@ -1,0 +1,30 @@
+{
+  "name": "derpdesign",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run packages/workspace/src/main.ts",
+    "test": "bun test packages",
+    "check": "tsc --noEmit",
+    "desktop:configure": "cmake -S apps/desktop -B build/desktop -G Ninja",
+    "desktop:build": "cmake --build build/desktop",
+    "desktop": "build/desktop/derpdesign",
+    "start": "bun scripts/start.ts",
+    "mcp": "bun scripts/mcp.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76"
+  },
+  "bin": {
+    "derpdesign": "bin/derpdesign"
+  }
+}

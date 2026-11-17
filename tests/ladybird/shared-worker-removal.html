@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>SharedWorker iframe lifetime</title>
+<p id="state">Starting</p><div id="frames"></div>
+<script>
+const mode=new URLSearchParams(location.search).get('mode')||'remove';
+window.report=event=>fetch('/report?event='+encodeURIComponent(event));
+const report=window.report;
+window.detach=frame=>{
+ report('before-'+mode);
+ if(mode==='websocket-close'){frame.remove();report('frame-detached');fetch('/close');}
+ else if(mode==='hide')frame.style.display='none';
+ else if(mode==='cycle'||mode==='remove-cycle'){let n=0;const timer=setInterval(()=>{frame.style.display=++n%2?'none':'block';if(n%2===0)frame.contentWindow.construct();report('cycle-'+n);if(n===20){clearInterval(timer);if(mode==='remove-cycle')frame.remove();}},40);}
+ else if(mode==='later')setTimeout(()=>frame.remove(),0);
+ else frame.remove();
+ report('after-'+mode);
+};
+const frame=document.createElement('iframe');
+frame.srcdoc=mode==='websocket-close'?`<!doctype html><script>
+const root=parent;const url=URL.createObjectURL(new Blob(['onconnect=e=>e.ports[0].postMessage(1)'],{type:'text/javascript'}));
+const socket=new WebSocket('ws://'+root.location.host+'/socket');root.retainedSocket=socket;
+socket.onopen=()=>{root.report('websocket-open');root.detach(frameElement)};
+socket.onclose=()=>{root.report('detached-close-callback');console.warn('DETACHED_WS_CALLBACK');try{root.retainedWorker=new SharedWorker(url);root.report('detached-worker-constructed')}catch(error){root.report('detached-worker-error-'+String(error))}};
+<\/script>`:`<!doctype html><script>
+fetch('/report?event=child-start');
+let n=0;window.construct=()=>{const worker=new SharedWorker('/shared-worker-script.js','iframe-lifetime-'+n++);worker.port.onmessage=()=>fetch('/report?event=worker-ready');worker.port.start();window.worker=worker;};construct();
+fetch('/report?event=worker-constructed');
+parent.detach(frameElement);
+<\/script>`;
+document.querySelector('#frames').append(frame);
+setTimeout(()=>{document.querySelector('#state').textContent='Survived';report('survived')},1500);
+</script>

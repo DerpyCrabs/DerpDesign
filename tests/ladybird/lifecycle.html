@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><style>body{background:#a02020;color:white;font:18px sans-serif}button,a{display:block;width:200px;height:50px}#state{display:block}</style>
+<button id="settle">Settle</button><a id="navigate" href="/lifecycle.html?mode=ready">Navigate</a><output id="state">waiting</output>
+<script>
+const mode=new URLSearchParams(location.search).get('mode');
+window.__DERPDESIGN__={ready:mode==='ready',stage:'waiting'};
+if(mode==='error')window.__DERPDESIGN__.error='Fixture failed explicitly';
+function settle(){window.__DERPDESIGN__={ready:true,stage:'settled'};document.querySelector('#state').textContent='settled';document.body.style.background='#208040'}
+document.querySelector('#settle').onclick=settle;
+if(mode==='ready')settle();
+</script>

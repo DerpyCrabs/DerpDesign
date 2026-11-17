@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><style>body{background:#123456;color:white;font:18px sans-serif}button,input{display:block;box-sizing:border-box;width:200px;height:40px}#mirror{display:block}</style>
+<button id="counter" onclick="this.textContent=String(Number(this.textContent)+1)">0</button>
+<input id="entry" aria-label="text" oninput="document.querySelector('#mirror').textContent=this.value">
+<output id="mirror"></output>

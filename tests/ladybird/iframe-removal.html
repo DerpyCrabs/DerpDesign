@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>Iframe removal input regression</title>
+<style>body{font:18px sans-serif;background:#e8f0e4;margin:20px}button{width:210px;height:46px;margin:8px}iframe{display:block;width:360px;height:130px;border:2px solid #375d39}output{display:block;margin:12px}</style>
+<button id="close">Close iframe</button><button id="remaining">Increment sibling</button>
+<output id="counter">0</output><output id="status">frame attached</output>
+<iframe id="child" src="/iframe-child.html"></iframe>
+<iframe id="cross" style="height:36px"></iframe>
+<script>
+window.__DERPDESIGN__={ready:true};
+document.querySelector('#cross').src=new URL('/iframe-grandchild.html',location.href).href.replace('127.0.0.1','localhost');
+console.debug('DERPDESIGN_IFRAME_ORDINARY_LOG');
+console.debug('__DERPDESIGN_INSPECTION__ordinary');
+// Hidden text makes read-only DOM replies much larger than the stderr pipe.
+const payload=document.createElement('div');payload.hidden=true;payload.id='large-inspection-payload';payload.textContent='x'.repeat(131072);document.body.append(payload);
+function removeFrame(){document.querySelector('#child')?.remove();document.querySelector('#cross')?.remove();document.querySelector('#status').textContent='frame removed'}
+document.querySelector('#close').onclick=removeFrame;
+document.querySelector('#remaining').onclick=()=>document.querySelector('#counter').textContent=String(Number(document.querySelector('#counter').textContent)+1);
+window.onmessage=event=>{if(event.data==='close-frame')removeFrame()};
+</script>

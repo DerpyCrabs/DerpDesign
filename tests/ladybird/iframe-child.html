@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><style>body{background:#d3e4ff;font:16px sans-serif}button{height:40px;margin:6px}</style>
+<button id="focus" onclick="this.textContent='Child clicked'">Focus iframe</button>
+<button id="remove" onclick="parent.postMessage('close-frame','*')">Close from child</button>
+<script>window.__DERPDESIGN__={ready:true};</script>
+<iframe id="nested-frame" src="/iframe-grandchild.html" style="display:block;width:260px;height:36px;border:3px solid #426391"></iframe>

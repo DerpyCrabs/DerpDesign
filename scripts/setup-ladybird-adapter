@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+"$root/scripts/setup-ladybird"
+state="$root/.local/engines/ladybird"
+export VCPKG_FORCE_SYSTEM_BINARIES=1
+cmake -S "$state/ladybird-197c851802f23cf956800d8dfe5083e18a424490" -B "$state/build-upstream" -DVCPKG_MANIFEST_INSTALL=OFF -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES= -DCMAKE_PROJECT_INCLUDE="$root/engines/ladybird/inject.cmake" -Dsimdutf_DIR="$state/build-upstream/vcpkg_installed/x64-linux/share/simdutf"
+cmake --build "$state/build-upstream" --target derp-ladybird -j "${LADYBIRD_JOBS:-4}"

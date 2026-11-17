@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+state="$root/.local/engines/ladybird"
+export QT_QPA_PLATFORM=offscreen FONTCONFIG_FILE="$root/tests/ladybird/fonts.conf"
+timeout 45 "$state/build-upstream/bin/Ladybird" --headless=text "file://$root/tests/ladybird/smoke.html" > "$state/smoke-text-isolated.log" 2>&1
+rg -q '^Clean upstream Ladybird JS passed' "$state/smoke-text-isolated.log"
+if rg -q 'free\(\):|ASSERTION FAILED|Segmentation fault' "$state/smoke-text-isolated.log"; then exit 1; fi
+printf 'Headless load and JavaScript smoke passed\n'

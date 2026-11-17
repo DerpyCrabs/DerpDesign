@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {Client} from '@modelcontextprotocol/sdk/client/index.js';
+import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {launch} from '../../scripts/runtime';
+import {fixture} from './fixture';
+const directory=await mkdtemp(join(tmpdir(),'derpdesign-active-'));
+const reservation=Bun.serve({port:0,fetch:()=>new Response('')});const port=reservation.port!;reservation.stop(true);
+const runtime=await launch({headless:true,directory,port:0});
+const client=new Client({name:'active-demo-test',version:'1'});
+const call=async(name:string,params:any={})=>{const r=await client.callTool({name,arguments:{params}});if(r.isError)throw Error(JSON.stringify(r.content));return JSON.parse((r.content as any[]).find(x=>x.type==='text').text);};
+try {
+ await client.connect(new StreamableHTTPClientTransport(new URL(runtime.url),{requestInit:{headers:{Authorization:`Bearer ${runtime.token}`}}}));
+ const {project,demo}=fixture(resolve(import.meta.dir,'../..'),port);
+ await call('project_register',project);await call('demo_put',demo);
+ await call('selection_set',{projectId:project.id,demoId:demo.id});
+ const before=await call('workspace_info');
+ await call('demo_put',{...demo,name:'Renamed while active'});
+ assert.deepEqual((await call('workspace_info')).selection,before.selection,'Metadata edits must retain the live session');
+ const updated={...demo,panes:[...demo.panes,{...demo.panes[1],id:'extra-pane',position:{x:900,y:0}}]};
+ await call('demo_put',updated);
+ const after=await call('workspace_info');
+ assert.equal(after.selection.demoId,demo.id);assert(after.selection.generation>before.selection.generation);
+ assert.deepEqual(after.focusRequest,before.focusRequest);
+ const capture=await call('pane_capture',{paneId:'extra-pane'});assert.equal(capture.generation,after.selection.generation);
+ assert.equal((await call('demo_list',{projectId:project.id})).length,1);
+ await call('demo_delete',{id:demo.id});
+ assert.equal((await call('workspace_info')).selection.demoId,null);assert.equal((await call('demo_list',{projectId:project.id})).length,0);
+ console.log('PASS active metadata edit, live pane addition/capture, same demo ID, no activation request, deletion');
+} finally {await client.close();await runtime.stop();}
