@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import base64,json,os,pathlib,queue,subprocess,tempfile,threading,time,http.server
+import io
+from PIL import Image
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 class Quiet(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a): pass
@@ -14,7 +16,7 @@ with tempfile.TemporaryDirectory() as tmp:
   def read():
    for line in proc.stdout: messages.put(json.loads(line))
   threading.Thread(target=read,daemon=True).start()
-  frames=[]; serial=0
+  frames=[]; serial=0; surfaces={}
   def send(method,params):
    global serial
    serial+=1; ident=serial
@@ -27,9 +29,17 @@ with tempfile.TemporaryDirectory() as tmp:
      continue
     if m.get('event')=='frame':
      data=pathlib.Path(m['path']).read_bytes()
-     assert len(data)==m['stride']*m['height']
+     patch=m.get('patch')
+     if patch:
+      assert m['paneId']=='p'
+      assert surfaces['p'].size==(m['width'],m['height'])
+     width,height=(patch['width'],patch['height']) if patch else (m['width'],m['height'])
+     assert len(data)==m['stride']*height
+     pixels=Image.frombytes('RGBA',(width,height),data,'raw','BGRA',m['stride'])
+     if patch: surfaces['p'].paste(pixels,(patch['x'],patch['y']))
+     else: surfaces[m['paneId']]=pixels
      frames.append((m,data))
-     proc.stdin.write(json.dumps(dict(method='frame.ack',params=dict(paneId=m['paneId'],generation=m['generation'],sequence=m['sequence'])))+'\n');proc.stdin.flush()
+     proc.stdin.write(json.dumps(dict(method='frame.ack',params=dict(paneId=m['paneId'],generation=m['generation'],sequence=m['sequence'],acceptPatches=m['paneId']=='p')))+'\n');proc.stdin.flush()
     elif m.get('id')==ident:
      return m
    raise AssertionError('reply timeout')
@@ -44,6 +54,12 @@ with tempfile.TemporaryDirectory() as tmp:
   def metrics():
    return json.loads(send('pane.inspect',{**p,'selector':'#metrics'})['result']['element']['text'])
   before=capture()
+  time.sleep(.2);send('engine.status',{})
+  offset=len(frames)
+  for _ in range(10):
+   assert send('pane.inspect',{**p,'selector':'button','geometryOnly':True})['result']['geometryOnly']
+  time.sleep(.1);send('engine.status',{})
+  assert sum(msg['paneId']=='p' for msg,_ in frames[offset:]) <= 1,'Read-only inspection forced repaints'
   inspected=send('pane.inspect',{**p,'selector':'button'})['result']
   assert inspected['element']['tagName']=='button'
   assert inspected['element']['text']=='0'
@@ -59,7 +75,12 @@ with tempfile.TemporaryDirectory() as tmp:
   def click(x,y):
    for action in ['down','up']:assert 'result' in send('pane.input',{**p,'event':dict(type='pointer',action=action,x=x,y=y,button='left')})
   click(40,28);time.sleep(.3)
-  after=capture();assert after!=before,'counter did not render change'
+  send('engine.status',{})
+  assert any(m.get('patch') for m,_ in frames),'Expected a cropped update'
+  reconstructed=surfaces['p'].copy()
+  after=capture()
+  assert reconstructed.tobytes()==Image.open(io.BytesIO(after)).convert('RGBA').tobytes(),'Cropped frames differ from complete paint'
+  assert after!=before,'counter did not render change'
   click(40,80)
   send('pane.input',{**p,'event':dict(type='text',text='hello CEF')})
   time.sleep(.3);typed=capture();assert typed!=after,'text did not render'

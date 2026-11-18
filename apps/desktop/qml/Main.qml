@@ -77,8 +77,6 @@ ApplicationWindow {
     function zoomAround(value){let next=Math.max(.05,Math.min(4,value));let x=canvasArea.width/2,y=canvasArea.height/2;panX=x-(x-panX)*next/zoom;panY=y-(y-panY)*next/zoom;zoom=next;overview=false}
     function canvasWheel(wheel){if(wheel.modifiers&Qt.ControlModifier)zoomAround(zoom*(wheel.angleDelta.y>0?1.1:1/1.1));else{overview=false;panX+=wheel.angleDelta.x;panY+=wheel.angleDelta.y}}
     Timer{id:fitTimer;interval:30;onTriggered:root.fitAll()}
-    onPanXChanged:grid.requestPaint()
-    onPanYChanged:grid.requestPaint()
     property bool toolShortcuts: (!activeFocusItem || (activeFocusItem.objectName!=="paneInteraction" && activeFocusItem.cursorPosition===undefined))
     Shortcut{sequence:"V";enabled:root.toolShortcuts;onActivated:root.chooseTool("interact")}
     Shortcut{sequence:"H";enabled:root.toolShortcuts;onActivated:root.chooseTool("hand")}
@@ -159,8 +157,21 @@ ApplicationWindow {
             onHeightChanged: {if(root.overview)fitTimer.restart()}
                     Rectangle{anchors.fill:parent;color:"#131923"}
                     Canvas {
-                        id:grid;anchors.fill:parent;onWidthChanged:requestPaint();onHeightChanged:requestPaint()
-                        onPaint:{let c=getContext("2d");c.reset();c.fillStyle="#283140";let step=24;for(let x=root.panX%step;x<width;x+=step)for(let y=root.panY%step;y<height;y+=step)c.fillRect(x,y,1,1)}
+                        // Move a cached grid by its phase; the canvas only paints on resize.
+                        x: root.panX % 24 - 24
+                        y: root.panY % 24 - 24
+                        width: parent.width + 72
+                        height: parent.height + 72
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            let c = getContext("2d")
+                            c.reset()
+                            c.fillStyle = "#283140"
+                            for (let x = 0; x < width; x += 24)
+                                for (let y = 0; y < height; y += 24)
+                                    c.fillRect(x, y, 1, 1)
+                        }
                     }
                     MouseArea {
                         objectName:"canvasBackground";anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.MiddleButton

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun run packages/workspace/src/main.ts",
     "test": "bun test packages",
+    "perf": "python3 tests/performance/run.py",
     "check": "tsc --noEmit",
     "desktop:configure": "cmake -S apps/desktop -B build/desktop -G Ninja",
     "desktop:build": "cmake --build build/desktop",

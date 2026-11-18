@@ -8,7 +8,7 @@ class EngineSurface : public QQuickItem {
 public:
     explicit EngineSurface(QQuickItem* parent = nullptr) : QQuickItem(parent) { setFlag(ItemHasContents); }
     QString paneId() const { return m_paneId; }
-    void setPaneId(QString value) { if (m_paneId != value) { m_paneId = value; emit paneIdChanged(); update(); } }
+    void setPaneId(QString value) { if (m_paneId != value) { m_paneId = value; m_fullUpdate = true; emit paneIdChanged(); update(); } }
     EngineManager* manager() const { return m_manager; }
     void setManager(EngineManager* value);
     QSGNode* updatePaintNode(QSGNode*, UpdatePaintNodeData*) override;
@@ -16,6 +16,8 @@ signals:
     void paneIdChanged();
     void managerChanged();
 private:
+    bool m_fullUpdate = true;
+    QRect m_damage;
     QString m_paneId;
     EngineManager* m_manager = nullptr;
 };

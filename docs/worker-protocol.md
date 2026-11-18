@@ -15,6 +15,14 @@ Worker emits event (no id):
 
 Pixels are premultiplied BGRA8, matching QImage::Format_ARGB32_Premultiplied on little-endian Linux. Fully write/close before emitting. Qt copies pixels into owned QImage and sends `{method:"frame.ack",params:{paneId,generation,sequence}}` (no reply required). Worker deletes the acknowledged file. Keep at most one unacknowledged published frame per pane; while waiting, retain only newest painted image and publish it upon ack. This is bounded transport backpressure, not a pane limit or engine suspension. No PNG/base64 continuous frame transport. A future shared-memory transport can replace files without changing session/inspection APIs.
 
+After retaining a frame, Qt includes `acceptPatches:true` in its acknowledgement.
+CEF can then send a cropped payload with a `patch` object containing physical
+pixel coordinates `x`, `y`, `width` and `height`. Event width and height still
+describe the full viewport. Stride and file length describe the payload.
+The worker accumulates damage until publication. A new image size or popup
+transition sends a complete image. A skipped or rejected frame clears patch
+permission on ACK. Consumers that omit the flag continue receiving full images.
+
 The desktop sends `{method:"session.visibility",params:{visible:false}}` (no reply
 required) when its window is hidden, minimized or unexposed. This is worker-wide
 state and also applies to subsequently created panes. Chromium uses `WasHidden`;

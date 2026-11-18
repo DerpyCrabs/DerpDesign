@@ -12,6 +12,7 @@
 #include <QScreen>
 #include <QEvent>
 #include <memory>
+#include <cstring>
 #include <limits>
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
@@ -205,8 +206,9 @@ void EngineManager::receive(const QString& engine) {
 void EngineManager::onFrame(const QString& engine, const QJsonObject& event) {
     auto& worker = m_workers[engine];
     const QString pane = event["paneId"].toString();
+    bool accepted = false;
     auto acknowledge = [&] {
-        QJsonObject ack{{"method", "frame.ack"}, {"params", QJsonObject{{"paneId", pane}, {"generation", event["generation"]}, {"sequence", event["sequence"]}}}};
+        QJsonObject ack{{"method", "frame.ack"}, {"params", QJsonObject{{"paneId", pane}, {"generation", event["generation"]}, {"sequence", event["sequence"]}, {"acceptPatches", accepted}}}};
         worker.process->write(QJsonDocument(ack).toJson(QJsonDocument::Compact) + '\n');
     };
     if (event["generation"].toInteger() != m_generation || m_panes.value(pane) != engine) { acknowledge(); return; }
@@ -214,8 +216,18 @@ void EngineManager::onFrame(const QString& engine, const QJsonObject& event) {
     const auto path = QFileInfo(event["path"].toString()).canonicalFilePath();
     const auto root = QFileInfo(worker.directory).canonicalFilePath() + '/';
     const int width = event["width"].toInt(), height = event["height"].toInt(), stride = event["stride"].toInt();
-    const qint64 length = qint64(stride) * height;
-    if (event["format"] != "BGRA8" || width <= 0 || height <= 0 || qint64(stride) < qint64(width) * 4 || !path.startsWith(root)) {
+    const bool partial = event.contains("patch");
+    const auto patch = event["patch"].toObject();
+    const int x = patch["x"].toInt(-1), y = patch["y"].toInt(-1);
+    const int rows = partial ? patch["height"].toInt() : height;
+    const int columns = partial ? patch["width"].toInt() : width;
+    const qint64 length = qint64(stride) * rows;
+    if (partial && (x < 0 || y < 0 || rows <= 0 || columns <= 0 ||
+        qint64(x) + columns > width || qint64(y) + rows > height ||
+        m_frames.value(pane).size() != QSize(width, height))) {
+        emit engineError("Invalid browser frame patch"); acknowledge(); return;
+    }
+    if (event["format"] != "BGRA8" || width <= 0 || height <= 0 || qint64(stride) < qint64(columns) * 4 || !path.startsWith(root)) {
         emit engineError("Invalid browser frame metadata"); acknowledge(); return;
     }
     const auto started = now();
@@ -225,19 +237,32 @@ void EngineManager::onFrame(const QString& engine, const QJsonObject& event) {
         if (pixels.size() != length) {
             emit engineError("Incomplete browser frame"); acknowledge(); return;
         }
-        // Keep the read allocation alive until the last QImage/scene-graph reader
-        // releases it. The worker may reuse its file immediately after our ACK.
         const auto byteCount = pixels.size();
-        auto* storage = new QByteArray(std::move(pixels));
-        m_frames[pane] = QImage(reinterpret_cast<const uchar*>(storage->constData()),
-            width, height, stride, QImage::Format_ARGB32_Premultiplied,
-            [](void* data) { delete static_cast<QByteArray*>(data); }, storage);
+        auto &frame = m_frames[pane];
+        if (partial) {
+            for (int row = 0; row < rows; ++row)
+                std::memcpy(frame.scanLine(y + row) + qsizetype(x) * 4,
+                            pixels.constData() + qsizetype(row) * stride, qsizetype(columns) * 4);
+        } else {
+            auto* storage = new QByteArray(std::move(pixels));
+            // Keep the allocation through scene-graph reads. Mutable backing lets an
+            // unshared frame accept the next patch without detaching its entire image.
+            frame = QImage(reinterpret_cast<uchar*>(storage->data()), width, height, stride,
+                QImage::Format_ARGB32_Premultiplied,
+                [](void* data) { delete static_cast<QByteArray*>(data); }, storage);
+        }
+        accepted = true;
         metric(pane, "framesReceived"); metric(pane, "frameBytes", byteCount);
         metric(pane, "frameReadCopyMs", now()-started);
         if (m_inputTime.contains(pane)) {
             metric(pane, "observationalNextFrameSamples");
             metric(pane, "observationalNextFrameMs", now()-m_inputTime.take(pane));
         }
+        if (event.contains("dirtyBoundsBytes")) {
+            metric(pane, "dirtyBoundsBytes", event["dirtyBoundsBytes"].toInteger());
+            metric(pane, "dirtyBytes", event["dirtyBytes"].toInteger());
+        }
+        emit frameUpdated(pane, partial ? QRect(x, y, columns, rows) : frame.rect());
         emit frameChanged(pane);
     } else emit engineError("Incomplete browser frame");
     acknowledge();

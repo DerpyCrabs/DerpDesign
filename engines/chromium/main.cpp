@@ -15,6 +15,7 @@
 #include <QFile>
 #include <QImage>
 #include <QPainter>
+#include <QRegion>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -27,6 +28,7 @@
 #include <set>
 #include <stdexcept>
 #include <cmath>
+#include <cstring>
 #include <unistd.h>
 static void emitJson(QJsonObject o) {
   std::cout << QJsonDocument(o).toJson(QJsonDocument::Compact).constData()
@@ -74,6 +76,7 @@ public:
   void setRendering(bool visible) {
     if (rendering == visible) return;
     rendering = visible;
+    damage = viewImage.rect();
     browser->GetHost()->WasHidden(!visible);
     if (visible) browser->GetHost()->Invalidate(PET_VIEW);
   }
@@ -81,7 +84,7 @@ public:
   CefRect popupRect;
   bool popupVisible = false;
   void compose() {
-    image = viewImage.copy();
+    image = viewImage; // QPainter detaches only when compositing a popup.
     if (popupVisible && !popupImage.isNull() && !image.isNull()) {
       QPainter painter(&image);
       painter.drawImage(QPoint(popupRect.x,
@@ -91,11 +94,13 @@ public:
     publish();
   }
   void OnPopupShow(CefRefPtr<CefBrowser>, bool show) override {
+    damage = viewImage.rect();
     popupVisible = show;
     if (!show) popupImage = {};
     compose();
   }
   void OnPopupSize(CefRefPtr<CefBrowser>, const CefRect &rect) override {
+    damage = viewImage.rect();
     popupRect = rect;
     compose();
   }
@@ -127,35 +132,66 @@ public:
       loaded = true;
     }
   }
+  // The receiver opts in on ACK after retaining a complete image.
+  bool receiverHasFrame = false;
+  QRegion damage;
   void publish() {
     if (!rendering || image.isNull() || !path.isEmpty() || !pending)
       return;
-    pending = false;
+    const QRect region = receiverHasFrame && !damage.isEmpty() ? damage.boundingRect() : image.rect();
+    const bool patch = region != image.rect();
+    const QImage payload = patch ? image.copy(region) : image;
     path = dir + "/frame-" + QString::number(++seq) + ".bgra";
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly))
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(reinterpret_cast<const char*>(payload.constBits()), payload.sizeInBytes()) != payload.sizeInBytes()) {
+      file.remove();
+      path.clear();
+      receiverHasFrame = false;
       return;
-    f.write((char *)image.constBits(), image.sizeInBytes());
-    f.close();
-    emitJson({{"event", "frame"},
-              {"paneId", id},
-              {"generation", generation},
-              {"sequence", seq},
-              {"width", image.width()},
-              {"height", image.height()},
-              {"stride", image.bytesPerLine()},
-              {"format", "BGRA8"},
-              {"path", path}});
+    }
+    file.close();
+    pending = false;
+    qint64 dirtyPixels = 0;
+    for (const auto &rect : damage) dirtyPixels += qint64(rect.width()) * rect.height();
+    const auto bounds = damage.boundingRect();
+    damage = QRegion();
+    QJsonObject event{{"event", "frame"}, {"paneId", id}, {"generation", generation},
+                      {"sequence", seq}, {"width", image.width()}, {"height", image.height()},
+                      {"stride", payload.bytesPerLine()}, {"format", "BGRA8"}, {"path", path}};
+    event["dirtyBytes"] = dirtyPixels * 4;
+    event["dirtyBoundsBytes"] = qint64(bounds.width()) * bounds.height() * 4;
+    if (patch) event["patch"] = QJsonObject{{"x", region.x()}, {"y", region.y()},
+         {"width", region.width()}, {"height", region.height()}};
+    emitJson(event);
   }
-  void OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList &,
+  void OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList &dirty,
                const void *p, int width, int height) override {
     if (!rendering) return;
-    QImage frame = QImage((const uchar *)p, width, height, width * 4,
-                   QImage::Format_ARGB32_Premultiplied)
-                .copy();
-    if (type == PET_VIEW) { viewImage = frame; ++paintRevision; }
-    else if (type == PET_POPUP) popupImage = frame;
-    else return;
+    const QImage frame(static_cast<const uchar*>(p), width, height, width * 4,
+                       QImage::Format_ARGB32_Premultiplied);
+    if (type == PET_VIEW) {
+      image = {}; // Release the composed view before updating its backing pixels.
+      if (frame.size() != viewImage.size() || dirty.empty()) {
+        damage = frame.rect();
+        viewImage = frame.copy();
+      } else {
+        for (const auto &rect : dirty) {
+          const auto changed = QRect(rect.x, rect.y, rect.width, rect.height).intersected(frame.rect());
+          if (changed.isEmpty()) continue;
+          damage |= changed;
+          for (int y = changed.top(); y <= changed.bottom(); ++y) {
+            const auto offset = qsizetype(changed.left()) * 4;
+            std::memcpy(viewImage.scanLine(y) + offset, frame.constScanLine(y) + offset,
+                        qsizetype(changed.width()) * 4);
+          }
+        }
+      }
+      ++paintRevision;
+    } else if (type == PET_POPUP) {
+      popupImage = frame.copy();
+      damage = viewImage.rect();
+    } else return;
     compose();
   }
   CefRefPtr<CefRegistration> observer;
@@ -203,7 +239,7 @@ public:
           QJsonDocument(reply.second).toJson().toStdString());
     return reply.second;
   }
-  void waitReady(qint64 deadline) {
+  void waitReady(qint64 deadline, bool freshPaint = true) {
     for (;;) {
       if (QDateTime::currentMSecsSinceEpoch() >= deadline)
         throw std::runtime_error(QString("Deadline expired waiting for readiness: loaded=%1, frame=%2x%3, viewport=%4x%5, scale=%6").arg(loaded).arg(image.width()).arg(image.height()).arg(w).arg(h).arg(deviceScaleFactor).toStdString());
@@ -218,6 +254,7 @@ public:
         auto readiness = state["result"].toObject()["value"].toObject();
         if (!readiness["error"].toString().isEmpty()) throw std::runtime_error(readiness["error"].toString().toStdString());
         if (readiness["ready"].toBool() && readiness["width"].toInt() == w && readiness["height"].toInt() == h && std::abs(readiness["dpr"].toDouble() - deviceScaleFactor) < 0.0001) {
+          if (!freshPaint) return;
           auto previousPaint = paintRevision;
           browser->GetHost()->Invalidate(PET_VIEW);
           while (paintRevision == previousPaint) {
@@ -501,6 +538,7 @@ NO_STACK_PROTECTOR int main(int argc, char **argv) {
             if (p["sequence"].toInt() == pane->seq) {
               QFile::remove(pane->path);
               pane->path.clear();
+              pane->receiverHasFrame = p["acceptPatches"].toBool();
               pane->publish();
             }
             continue;
@@ -526,7 +564,7 @@ NO_STACK_PROTECTOR int main(int argc, char **argv) {
             pane->waitReady(deadline);
             result = QJsonObject{{"kind", "document-load-and-paint"}};
           } else if (method == "pane.inspect") {
-            pane->waitReady(deadline);
+            pane->waitReady(deadline, false);
             result = pane->inspect(p, deadline);
           } else if (method == "pane.capture") {
             pane->waitReady(deadline);

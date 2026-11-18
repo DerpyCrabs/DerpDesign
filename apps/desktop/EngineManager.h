@@ -26,6 +26,7 @@ public:
     Q_INVOKABLE QString paneError(const QString& paneId) const;
 signals:
     void frameChanged(QString paneId);
+    void frameUpdated(QString paneId, QRect region);
     void sessionChanged();
     void engineError(QString message);
 private:
