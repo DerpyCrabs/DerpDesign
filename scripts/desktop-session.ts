@@ -1,16 +1,16 @@
 import {spawn} from 'node:child_process';
 import {mkdir,mkdtemp,open} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
-import {root} from './runtime';
+import {dataRoot,hostArgument,root} from './runtime';
 
 /** The visible app owns its lifetime; a CLI/agent command only starts it. */
 export async function startDesktop(options:{directory?:string;port?:number;restoreDesktop?:boolean}={}) {
- const directory=resolve(options.directory??process.env.DERP_STATE_DIR??join(root,'.local/workspace'));
- const logs=join(root,'.local/desktop');await mkdir(logs,{recursive:true});
+ const directory=resolve(options.directory??process.env.DERP_STATE_DIR??join(dataRoot,'workspace'));
+ const logs=join(dataRoot,'desktop');await mkdir(logs,{recursive:true});
  const run=await mkdtemp(join(logs,'run-'));
  const resultFile=join(run,'startup.json'),log=join(run,'desktop.log');
  const output=await open(log,'a',0o600);
- const child=spawn(process.execPath,[join(root,'scripts/desktop-host.ts'),directory,String(options.port??Number(process.env.DERP_WORKSPACE_PORT??47831)),run,options.restoreDesktop === false ? 'explicit' : 'restore'],{cwd:root,detached:true,stdio:['ignore',output.fd,output.fd],env:process.env});
+ const child=spawn(process.execPath,[hostArgument('desktop'),directory,String(options.port??Number(process.env.DERP_WORKSPACE_PORT??47831)),run,options.restoreDesktop === false ? 'explicit' : 'restore'],{cwd:root,detached:true,stdio:['ignore',output.fd,output.fd],env:process.env});
  await output.close();
  let spawnError:Error|undefined;child.on('error',error=>{spawnError=error});child.unref();
  try {

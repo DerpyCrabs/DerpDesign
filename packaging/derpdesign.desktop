@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=DerpDesign
+Comment=Explore project demos on a mixed-engine canvas
+Exec=derpdesign open
+Icon=applications-graphics
+Terminal=false
+Categories=Development;Graphics;

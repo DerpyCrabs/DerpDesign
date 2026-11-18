@@ -13,11 +13,21 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/automation": {
+      "name": "@derpdesign/automation",
+    },
+    "packages/harness": {
+      "name": "@derpdesign/harness",
+    },
     "packages/protocol": {
       "name": "@derpdesign/protocol",
     },
   },
   "packages": {
+    "@derpdesign/automation": ["@derpdesign/automation@workspace:packages/automation"],
+
+    "@derpdesign/harness": ["@derpdesign/harness@workspace:packages/harness"],
+
     "@derpdesign/protocol": ["@derpdesign/protocol@workspace:packages/protocol"],
 
     "@hono/node-server": ["@hono/node-server@2.1.8", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA=="],

@@ -1,7 +1,7 @@
 import {spawn} from 'node:child_process';
 import {mkdir,mkdtemp,readFile,writeFile,open,unlink,realpath} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
-import {root,launch} from './runtime';
+import {dataRoot,hostArgument,root,launch} from './runtime';
 import {randomBytes} from 'node:crypto';
 
 export interface SessionRecord {version:1;url:string;directory:string;controlUrl:string;secret:string;pid:number;log:string}
@@ -20,17 +20,17 @@ export async function sessionControl(file:string,action:'status'|'stop'){
 export async function startSession(options:{directory?:string;scale?:number;port?:number}){
  if(options.scale!==undefined&&(!Number.isFinite(options.scale)||options.scale<=0))throw Error('Scale must be positive');
  if(options.port!==undefined&&(!Number.isInteger(options.port)||options.port<0||options.port>65535))throw Error('Port must be an integer from 0 to 65535');
- await mkdir(join(root,'.local/sessions'),{recursive:true});
- const directory=options.directory?resolve(options.directory):await mkdtemp(join(root,'.local/sessions/session-'));
+ await mkdir(join(dataRoot,'sessions'),{recursive:true});
+ const directory=options.directory?resolve(options.directory):await mkdtemp(join(dataRoot,'sessions/session-'));
  await mkdir(directory,{recursive:true,mode:0o700});
- if(await realpath(directory)===await realpath(join(root,'.local/workspace')).catch(()=>join(root,'.local/workspace')))throw Error('Persistent headless sessions cannot use the desktop state directory');
+ if(await realpath(directory)===await realpath(join(dataRoot,'workspace')).catch(()=>join(dataRoot,'workspace')))throw Error('Persistent headless sessions cannot use the desktop state directory');
  const file=join(directory,'session.json'),pending=join(directory,'session-start.lock'),log=join(directory,'session.log');
  if(await Bun.file(file).exists())throw Error(`Session record already exists: ${file}. Use session status/stop; do not replace it.`);
  const lock=await open(pending,'wx');await lock.close();
  const output=await open(log,'a',0o600);
  let child:ReturnType<typeof spawn>|undefined;
  try{
-  child=spawn(process.execPath,[join(root,'scripts/session-host.ts'),directory,String(options.scale??1),String(options.port??0)],{cwd:root,detached:true,stdio:['ignore',output.fd,output.fd],env:process.env});
+  child=spawn(process.execPath,[hostArgument('session'),directory,String(options.scale??1),String(options.port??0)],{cwd:root,detached:true,stdio:['ignore',output.fd,output.fd],env:process.env});
   let error:Error|undefined;child.on('error',e=>{error=e});child.unref();
   const deadline=Date.now()+20000;
   while(!await Bun.file(file).exists()){

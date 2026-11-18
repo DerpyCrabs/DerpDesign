@@ -2,6 +2,12 @@
 
 Native Qt canvas for local project demos, browser-engine comparison and AI inspection and verification through MCP.
 
+## Arch Linux installation
+
+From this checkout, with Bun on PATH, run `makepkg -si`. The package builds both pinned renderers and installs the DerpDesign application menu entry and the `derpdesign` CLI. If both renderer build trees are already configured in this checkout, use `DERPDESIGN_PACKAGE_REUSE_BUILD=1 makepkg -si` to reuse them.
+
+Launch from the menu or run `derpdesign open`. The installed app keeps its catalog, canvas settings and sessions under `${XDG_DATA_HOME:-$HOME/.local/share}/derpdesign`. Development runs use the checkout’s `.local/` directory.
+
 ## Development
 
 ```sh
