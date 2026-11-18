@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QDateTime>
 #include <QUuid>
+#include <QSettings>
 
 WorkspaceClient::WorkspaceClient(EngineManager* engines, QObject* parent) : QObject(parent), m_engines(engines) {
     m_base = qEnvironmentVariable("DERP_WORKSPACE_URL", "http://127.0.0.1:47831");
@@ -15,6 +16,17 @@ WorkspaceClient::WorkspaceClient(EngineManager* engines, QObject* parent) : QObj
     m_poll.start(1500);
     if (m_token.isEmpty()) setError("Desktop credential missing. Launch with the DerpDesign launcher.");
     else { refresh(); connectEngine(); }
+}
+QVariantMap WorkspaceClient::savedCanvas() const {
+    const auto path = qEnvironmentVariable("DERP_CANVAS_SETTINGS");
+    if (path.isEmpty()) return {};
+    return QSettings(path, QSettings::IniFormat).value("canvas").toMap();
+}
+void WorkspaceClient::saveCanvas(const QVariantMap& view) {
+    const auto path = qEnvironmentVariable("DERP_CANVAS_SETTINGS");
+    if (path.isEmpty()) return;
+    QSettings settings(path, QSettings::IniFormat);
+    settings.setValue("canvas", view);
 }
 QNetworkRequest WorkspaceClient::request(const QString& path) const {
     QNetworkRequest req(QUrl(m_base + path));

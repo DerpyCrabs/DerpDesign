@@ -39,6 +39,8 @@ bin/derpdesign mcp --headless --scale 1.6
 
 Persistent sessions run without a window and survive individual CLI calls; stop cleans up their owned host and project server. Stdio MCP owns cleanup on client EOF/signals instead. Both use isolated state, seeded with the desktop catalog. Concurrent sessions need separate state directories and dev-server ports. `sequence` uses selector-based native input and assertions, returning versioned initial/final captures and failure evidence. Existing captures already carry source/harness fingerprints.
 
+A normal desktop launch (including `derpdesign open`) restores the last project, demo, pan and zoom from its state directory. An explicit launch target or MCP selection opens the requested demo in its default overview.
+
 Use `open --project ID --demo ID --pane ID` only when a visible desktop action is requested. It may launch a window or change selection; it is not a connection recovery command. Reusing an existing window does not raise or activate it, and keeps its canvas position. `--pane` sets the initial pane only when starting a new desktop. Do not stop the user's desktop or take over its state directory for verification.
 
 [Complete CLI and sequence reference](skills/derpdesign/references/cli.md). Tests: `bun tests/cli/session-sequence.ts` checks real Chromium/Ladybird input, failure evidence and persistent cleanup. Existing tests: `bun tests/cli/verify.ts`, `bun tests/cli/open.ts`, `bun tests/cli/lifecycle.ts`. All use isolated state and no visible windows.

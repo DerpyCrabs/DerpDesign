@@ -19,6 +19,8 @@ public:
     QVariantMap inspection() const { return m_inspection; }
     QString error() const { return m_error; }
     bool connected() const { return m_connected; }
+    Q_INVOKABLE QVariantMap savedCanvas() const;
+    Q_INVOKABLE void saveCanvas(const QVariantMap& view);
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void call(const QString& method, const QVariantMap& params = {});
     Q_INVOKABLE void clearError();

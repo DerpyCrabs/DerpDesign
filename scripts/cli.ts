@@ -13,7 +13,7 @@ const command=positionals[0];
 if(v.help||!command){console.log(`derpdesign session start [--state-dir DIRECTORY] [--scale 1.6]
 derpdesign session status|stop --session FILE
 derpdesign sequence --session FILE --pane ID --file steps.json [--out report.json]
-derpdesign open --project ID --demo ID [--pane ID]
+derpdesign open [--project ID --demo ID [--pane ID]]
 derpdesign screenshot --pane ID --out file.png
 derpdesign inspect --pane ID [--selector CSS | --point X,Y] [--frame-path JSON] [--properties color,width]
 derpdesign snapshot [--project ID --demo ID] --out DIRECTORY
@@ -30,7 +30,7 @@ if(command==='sequence'&&!v.file)throw Error('sequence requires --file');
 const sequence=command==='sequence'?sequenceSchema.parse(await Bun.file(v.file!).json()):undefined;
 if(!['sequence','open','screenshot','inspect','snapshot','call','mcp'].includes(command))throw Error('Unknown command '+command);
 if(v.project&&!v.demo)throw Error('--project requires --demo');
-if(command==='open'&&(!v.project||!v.demo))throw Error('open requires --project and --demo');
+if(command==='open'&&v.pane&&!v.demo)throw Error('--pane requires --demo');
 if(['sequence','screenshot','inspect'].includes(command)&&!v.pane)throw Error('--pane is required');
 if(['screenshot','snapshot'].includes(command)&&!v.out)throw Error('--out is required');
 let owned:Awaited<ReturnType<typeof launch>>|undefined;
@@ -62,7 +62,7 @@ try{
  if(command==='mcp'&&v.headless){owned=await launch({headless:true,scale:Number(v.scale??1),directory:v['state-dir'],port:v.port?Number(v.port):undefined});url=owned.url;token=owned.token;}
  if(command==='open'){
   // Only a refused connection authorizes starting a new local host; auth/protocol errors do not.
-  try{await fetch(new URL('/health',url),{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(2000)})}catch(e:any){if(v.session||v.url||process.env.DERP_WORKSPACE_MCP_URL||(e.code!=='ECONNREFUSED'&&e.cause?.code!=='ECONNREFUSED'))throw e;const desktop=await startDesktop({directory:v['state-dir'],port:v.port?Number(v.port):undefined});url=desktop.url;startedDesktop=true;}
+  try{await fetch(new URL('/health',url),{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(2000)})}catch(e:any){if(v.session||v.url||process.env.DERP_WORKSPACE_MCP_URL||(e.code!=='ECONNREFUSED'&&e.cause?.code!=='ECONNREFUSED'))throw e;const desktop=await startDesktop({restoreDesktop:!v.demo,directory:v['state-dir'],port:v.port?Number(v.port):undefined});url=desktop.url;startedDesktop=true;}
  }
  await connect();
  if(command==='open'&&(await call('workspace_info')).hostMode==='headless')throw Error('The connected host has no window. Connect to a desktop host to focus its canvas.');

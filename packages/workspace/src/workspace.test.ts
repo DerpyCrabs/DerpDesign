@@ -213,3 +213,26 @@ test("generation-bound input is discarded after selection changes, including reu
     expect(dispatched).toBe(true);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+test("an explicit switch cancels desktop restore before it opens the previous demo", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "workspace-restore-"));
+  try {
+    const old = await new Workspace(directory).init();
+    old.state.selection = {projectId:"p", demoId:"d", generation:3};
+    old.state.demos = [{id:"d", projectId:"p"}];
+    await old.save();
+    const workspace = await new Workspace(directory, true).init();
+    workspace.hostMode = "window";
+    const methods:string[] = [];
+    workspace.attach({send(raw:string) {
+      const {method,id} = JSON.parse(raw);
+      methods.push(method);
+      workspace.reply(JSON.stringify({id,result:{}}));
+    }});
+    await workspace.call("selection.set", {projectId:null, demoId:null});
+    expect(methods).toEqual(["session.close"]);
+    expect(workspace.state.lastDesktopSelection.demoId).toBeNull();
+  } finally {
+    await rm(directory, {recursive:true,force:true});
+  }
+});

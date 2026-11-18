@@ -54,7 +54,39 @@ ApplicationWindow {
     }
     Timer{id:hoverInspectTimer;interval:90;onTriggered:{if(root.hoverInFlight)return;let request=root.pendingHover;root.pendingHover=null;if(request&&root.mode==="inspect")root.requestInspection(request.paneId,{point:request.point},"hover")}}
     property string selectionContext: [selection.projectId, selection.demoId, selection.generation].join(":")
-    onSelectionContextChanged: { selectedPane = ""; clearInspectionContext(); overview=true;fitTimer.restart() }
+    property string canvasContext: ""
+    function saveCanvas() {
+        if (!selection.demoId || canvasContext !== selectionContext || !workspace.saveCanvas) return
+        workspace.saveCanvas({projectId:selection.projectId, demoId:selection.demoId,
+            generation:selection.generation, panX, panY, zoom, overview})
+    }
+    Timer { id:saveViewTimer; interval:200; onTriggered:root.saveCanvas() }
+    onPanXChanged: saveViewTimer.restart()
+    onPanYChanged: saveViewTimer.restart()
+    onZoomChanged: saveViewTimer.restart()
+    onOverviewChanged: saveViewTimer.restart()
+    onClosing: saveCanvas()
+    onSelectionContextChanged: {
+        saveViewTimer.stop()
+        selectedPane = ""
+        clearInspectionContext()
+        canvasContext = selectionContext
+        const view = selection.resumedFrom !== undefined && workspace.savedCanvas ? workspace.savedCanvas() : null
+        if (view && view.projectId === selection.projectId && view.demoId === selection.demoId &&
+            view.generation === selection.resumedFrom && Number.isFinite(view.panX) &&
+            Number.isFinite(view.panY) && Number.isFinite(view.zoom) && view.zoom > 0) {
+            fitTimer.stop()
+            overview = view.overview
+            zoom = view.zoom
+            panX = view.panX
+            panY = view.panY
+            saveCanvas()
+        } else {
+            overview = true
+            fitTimer.restart()
+            saveViewTimer.restart()
+        }
+    }
     onSelectedPaneChanged: { clearInspectionContext(); engines.dismissSelectPopups(selectedPane) }
     onModeChanged: { if(mode !== "interact") engines.dismissSelectPopups() }
     onActiveChanged: { if(!active) engines.dismissSelectPopups() }

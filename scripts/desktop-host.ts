@@ -1,10 +1,10 @@
 import {writeFile,rename} from 'node:fs/promises';
 import {join} from 'node:path';
 import {launch} from './runtime';
-const [directory,port,run]=process.argv.slice(2);
+const [directory,port,run,mode]=process.argv.slice(2);
 async function report(name:string,value:unknown){const file=join(run,name);await writeFile(file+'.tmp',JSON.stringify(value),{mode:0o600});await rename(file+'.tmp',file);}
 try {
- const runtime=await launch({directory,port:Number(port)});
+ const runtime=await launch({directory,restoreDesktop:mode !== 'explicit',port:Number(port)});
  console.error(`[${new Date().toISOString()}] Desktop ready; supervisor ${process.pid}, host ${runtime.host.pid}`);
  await report('startup.json',{url:runtime.url,pid:process.pid,directory});
  const code=await runtime.host.exited;

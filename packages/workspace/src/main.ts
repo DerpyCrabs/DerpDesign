@@ -58,7 +58,9 @@ export class Workspace {
   tail: Promise<any> = Promise.resolve();
   process: ReturnType<typeof Bun.spawn> | undefined;
   hostMode = "unknown";
-  constructor(public directory: string) {}
+  private restoreAbort?: AbortController;
+  private resumeSelection?: {projectId:string; demoId:string; generation:number};
+  constructor(public directory: string, private restoreDesktop = false) {}
   async init() {
     await mkdir(join(this.directory, "artifacts"), { recursive: true });
     try {
@@ -70,6 +72,11 @@ export class Workspace {
     }
     delete this.state.annotations; // Ignore legacy feedback when loading older workspaces.
     delete this.state.focusRequest;
+    const previous = this.state.lastDesktopSelection ?? this.state.selection;
+    if (this.restoreDesktop && this.state.demos.some((d:any) =>
+        d.id === previous.demoId && d.projectId === previous.projectId))
+      this.resumeSelection = previous;
+    if (this.restoreDesktop) this.state.lastDesktopSelection = previous;
     this.state.selection = {
       projectId: null,
       demoId: null,
@@ -85,6 +92,17 @@ export class Workspace {
   attach(socket: any) {
     if (this.socket) throw Error("Engine already connected");
     this.socket = socket;
+    const previous = this.resumeSelection;
+    if (previous) {
+      this.resumeSelection = undefined;
+      const controller = new AbortController();
+      this.restoreAbort = controller;
+      // Enqueue before accepting any subsequent selection or focus request.
+      void this.call("selection.set", {projectId:previous.projectId, demoId:previous.demoId},
+        true, {generation:previous.generation, signal:controller.signal})
+        .catch(error => { if (!controller.signal.aborted) console.error("Desktop restore failed:", error); })
+        .finally(() => { this.restoreAbort = undefined; });
+    }
   }
   disconnect() {
     this.socket = undefined;
@@ -127,8 +145,12 @@ export class Workspace {
       );
     });
   }
-  call(method: string, params: any = {}, ui = false) {
-    const run = this.tail.then(() => this.execute(method, params, ui));
+  call(method: string, params: any = {}, ui = false, restore?: { generation:number; signal:AbortSignal }) {
+    if (method === "selection.set" && !restore) {
+      this.resumeSelection = undefined;
+      this.restoreAbort?.abort();
+    }
+    const run = this.tail.then(() => this.execute(method, params, ui, restore));
     this.tail = run.catch(() => {});
     return run;
   }
@@ -143,7 +165,7 @@ export class Workspace {
     if (this.process) await this.process.exited;
     this.process = undefined;
   }
-  async execute(method: string, p: any, ui: boolean): Promise<any> {
+  async execute(method: string, p: any, ui: boolean, restore?: { generation:number; signal:AbortSignal }): Promise<any> {
     if (method === "workspace.info") return {selection:this.state.selection,focusRequest:this.state.focusRequest??null,hostMode:this.hostMode,directory:this.directory,engineConnected:!!this.socket};
     if (method === "window.present") {
       if(this.hostMode === "headless") throw Error("This host has no window");
@@ -183,6 +205,7 @@ export class Workspace {
           demoId: null,
           generation: this.state.selection.generation + 1,
         };
+        if (this.hostMode === "window") this.state.lastDesktopSelection = this.state.selection;
       }
       if (i < 0) this.state.projects.push(value);
       else this.state.projects[i] = value;
@@ -222,6 +245,7 @@ export class Workspace {
       return {id:p.id,deleted:true};
     }
     if (method === "selection.set") {
+      restore?.signal.throwIfAborted();
       if (p.projectId === null && p.demoId === null) {
         if (this.socket)
           await this.engine("session.close", this.state.selection);
@@ -231,6 +255,7 @@ export class Workspace {
           demoId: null,
           generation: this.state.selection.generation + 1,
         };
+        if (this.hostMode === "window") this.state.lastDesktopSelection = this.state.selection;
         await this.save();
         return this.state.selection;
       }
@@ -254,10 +279,11 @@ export class Workspace {
         });
         const until = Date.now() + (pr.server.readyTimeoutMs ?? 30000);
         while (true) {
+          restore?.signal.throwIfAborted();
           if (this.process.exitCode !== null)
             throw Error("Project process exited");
           try {
-            if ((await fetch(pr.server.url)).ok) break;
+            if ((await fetch(pr.server.url, {signal:restore?.signal})).ok) break;
           } catch {}
           if (Date.now() > until)
             throw Error("Project readiness deadline exceeded");
@@ -272,7 +298,10 @@ export class Workspace {
             url: this.paneUrl(x, pr.server.url),
           })),
         });
-        this.state.selection = { projectId: pr.id, demoId: d.id, generation };
+        restore?.signal.throwIfAborted();
+        this.state.selection = { projectId: pr.id, demoId: d.id, generation,
+          ...(restore ? {resumedFrom:restore.generation} : {}) };
+        if (this.hostMode === "window") this.state.lastDesktopSelection = this.state.selection;
         await this.save();
         return this.state.selection;
       } catch (e) {
@@ -468,13 +497,14 @@ const descriptions: Record<string, string> = {
   "engine.status": "Report connected engine capabilities or unavailability.",
 };
 export async function start(options: {
+  restoreDesktop?: boolean;
   directory?: string;
   port?: number;
   token: string;
   desktopToken: string;
 }) {
   const workspace = await new Workspace(
-    resolve(options.directory ?? ".local/workspace"),
+    resolve(options.directory ?? ".local/workspace"), options.restoreDesktop,
   ).init();
   const server = Bun.serve({
     // Engine operations enforce their own deadlines; MCP may stream longer than Bun's default HTTP idle timeout.
