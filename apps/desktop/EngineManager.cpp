@@ -132,9 +132,20 @@ bool EngineManager::start(const QString& key) {
     QDir().mkpath(directory);
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("DERP_FRAME_DIR", directory);
+    // Ladybird creates Unix sockets under its profile and needs a short pathname.
+    std::shared_ptr<QTemporaryDir> profile;
+    if (engine == "ladybird") {
+        profile = std::make_shared<QTemporaryDir>("/tmp/derp-ladybird-XXXXXX");
+        if (!profile->isValid()) {
+            delete process;
+            QDir(directory).removeRecursively();
+            return false;
+        }
+        environment.insert("DERP_LADYBIRD_PROFILE", profile->path());
+    }
     process->setProcessEnvironment(environment);
     process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
-    m_workers.insert(key, {process, {}, directory, engine});
+    m_workers.insert(key, {process, {}, directory, engine, 0, true, profile});
     connect(process, &QProcess::readyReadStandardOutput, this, [this, key] { receive(key); });
     connect(process, &QProcess::errorOccurred, this, [this, key, process] { failWorker(key, process->errorString()); });
     connect(process, &QProcess::finished, this, [this, key](int exitCode, QProcess::ExitStatus) { failWorker(key, QString("Worker exited (%1)").arg(exitCode)); });

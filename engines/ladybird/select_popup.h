@@ -1,5 +1,5 @@
 #pragma once
-#include <LibWeb/HTML/SelectItem.h>
+#include <LibWebCommon/HTML/SelectItem.h>
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QJsonArray>
@@ -26,8 +26,9 @@ public:
   QString search;
   qint64 searchTime = 0;
   std::function<void(std::optional<u32>)> closed;
-  static QString text(String const &value) {
-    auto bytes = value.bytes_as_string_view();
+  static QString text(Utf16String const &value) {
+    auto string = value.to_well_formed_utf8();
+    auto bytes = string.bytes_as_string_view();
     return QString::fromUtf8(bytes.characters_without_null_termination(),
                              int(bytes.length()));
   }

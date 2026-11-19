@@ -1,6 +1,6 @@
 #pragma once
 
-#include <LibWeb/Page/InputEvent.h>
+#include <LibWebCommon/Page/InputEvent.h>
 #include <LibWebView/ViewImplementation.h>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -34,7 +34,7 @@ inline QString send_input(WebView::ViewImplementation &view,
                                    event["y"].toDouble() * scale};
     auto mouse_type = Web::MouseEvent::Type::MouseMove;
     auto button = MouseButton::None;
-    int dx = 0, dy = 0;
+    double dx = 0, dy = 0;
     if (type == "wheel") {
       mouse_type = Web::MouseEvent::Type::MouseWheel;
       // Protocol carries Qt angleDelta (positive Y means up). Match Qt's
@@ -66,15 +66,15 @@ inline QString send_input(WebView::ViewImplementation &view,
     } else if (action != "move") {
       return "Unsupported pointer action: " + action;
     }
-    view.enqueue_input_event(Web::MouseEvent{mouse_type, position, position,
-                                             button, buttons, modifiers, dx, dy,
-                                             nullptr});
+    Web::MouseEvent mouse{mouse_type, position, position, button, buttons, modifiers, dx, dy};
+    mouse.click_count = action == "down" || action == "up" ? 1 : 0;
+    view.enqueue_input_event(move(mouse));
     return {};
   }
   auto enqueue_key = [&](Web::KeyEvent::Type kind, KeyCode key, u32 point,
                          bool repeat = false) {
     view.enqueue_input_event(
-        Web::KeyEvent{kind, key, modifiers, point, repeat, nullptr});
+        Web::KeyEvent{kind, key, modifiers, point, repeat, kind == Web::KeyEvent::Type::KeyDown && point != 0});
   };
   if (type == "text") {
     if (!event["text"].isString())

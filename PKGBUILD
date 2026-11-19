@@ -2,7 +2,7 @@
 BUILDDIR="$startdir/artifacts/arch"
 pkgname=derpdesign
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Desktop demo canvas with Chromium and Ladybird renderers'
 arch=('x86_64')
 license=('custom')
@@ -10,7 +10,7 @@ depends=(alsa-lib at-spi2-core ca-certificates cairo cpptrace dbus expat gcc-lib
          glib2 glibc libcups libglvnd libpulse libx11 libxcb libxcomposite
          libxdamage libxext libxfixes libxkbcommon libxrandr mesa nspr nss pango
          qt6-base qt6-declarative qt6-wayland qt6-websockets systemd-libs vulkan-icd-loader)
-makedepends=(autoconf-archive clang19 cmake curl git nasm ninja patchelf python qt6-tools unzip zip)
+makedepends=(autoconf-archive rustup cmake curl git nasm ninja patchelf python qt6-tools unzip zip)
 options=('!strip' '!debug' '!lto')
 
 build() {
@@ -23,11 +23,12 @@ build() {
   if [[ ${DERPDESIGN_PACKAGE_REUSE_BUILD:-0} != 1 ]]; then
     scripts/setup-cef.sh
     scripts/setup-ladybird --build
-    scripts/setup-ladybird-adapter
   else
     cmake --build .local/engines/chromium/build --target derp-chromium
   fi
-  cmake --build .local/engines/ladybird/build-upstream --target derp-ladybird WebContent WebWorker ImageDecoder RequestServer --parallel "${LADYBIRD_JOBS:-4}"
+  export RUSTUP_TOOLCHAIN=1.98.0
+  cmake --build .local/engines/ladybird/build-upstream --target derp-ladybird ladybird --parallel "${LADYBIRD_JOBS:-4}"
+  python3 tests/ladybird/status
 }
 
 package() {
@@ -42,11 +43,26 @@ package() {
   cp -aL "$cef/sdk/Release/." "$cef/sdk/Resources/." "$dest/chromium/"
   install -Dm755 "$lb/build-upstream/bin/derp-ladybird" "$dest/ladybird/bin/derp-ladybird"
   install -d "$dest/ladybird/libexec" "$dest/ladybird/share" "$dest/packages/harness"
-  install -m755 "$lb/build-upstream/libexec/"{WebContent,WebWorker,ImageDecoder,RequestServer} "$dest/ladybird/libexec/"
+  install -m755 "$lb/build-upstream/libexec/"{AudioServer,Compositor,Hub,ImageDecoder,MediaServer,RequestServer,SystemProbe,VideoDecoderServer,WebContent,WebRTCClient} "$dest/ladybird/libexec/"
+  # Reused shared builds need their private engine and vcpkg libraries alongside the helpers.
+  local file library
+  local -a binaries=("$dest/ladybird/bin/derp-ladybird" "$dest"/ladybird/libexec/*)
+  local private_libs
+  local -a sources=("$lb/build-upstream/bin/derp-ladybird")
+  for file in "$dest"/ladybird/libexec/*; do sources+=("$lb/build-upstream/libexec/${file##*/}"); done
+  private_libs=$(ldd "${sources[@]}" | awk '$2 == "=>" && $3 ~ /^\// && $3 !~ /^\/(usr\/)?lib(64)?\// { print $3 }' | sort -u)
+  if [[ -n $private_libs ]]; then
+    install -d "$dest/ladybird/lib"
+    while IFS= read -r library; do
+      install -m755 "$library" "$dest/ladybird/lib/${library##*/}"
+    done <<< "$private_libs"
+    for file in "$dest"/ladybird/lib/*; do patchelf --set-rpath '$ORIGIN' "$file"; done
+    for file in "${binaries[@]}"; do patchelf --set-rpath '$ORIGIN/../lib' "$file"; done
+  fi
   cp -aL "$lb/build-upstream/share/Lagom" "$dest/ladybird/share/"
   cp -a packages/harness/{package.json,src} "$dest/packages/harness/"
   install -Dm644 "$cef/sdk/LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/CEF"
   install -Dm644 "$cef/sdk/CREDITS.html" "$pkgdir/usr/share/licenses/$pkgname/CEF-CREDITS.html"
-  install -Dm644 "$lb"/ladybird-*/LICENSE "$pkgdir/usr/share/licenses/$pkgname/Ladybird"
+  install -Dm644 "$lb/ladybird-$(cat engines/ladybird/REVISION)/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/Ladybird"
   install -Dm644 packaging/derpdesign.desktop "$pkgdir/usr/share/applications/derpdesign.desktop"
 }

@@ -20,7 +20,7 @@ bun run start
 Desktop launch returns once the app is ready. The app runs independently of the launching terminal; close its window to stop it. Startup output includes the retained diagnostic log path under `.local/desktop/`.
 
 
-Requires Qt 6 Core/Gui/Quick/QuickControls2/Network/WebSockets development packages, CMake and a C++20 compiler. Engine setup is separate: `scripts/setup-cef.sh` provisions CEF; `scripts/setup-ladybird --build` provisions and builds clean pinned upstream Ladybird, then `scripts/setup-ladybird-adapter` builds its external worker. See engine directories for current build state. `DERP_CHROMIUM_WORKER` and `DERP_LADYBIRD_WORKER` can specify worker executables. Missing engines are reported, never substituted.
+Requires Qt 6 Core/Gui/Quick/QuickControls2/Network/WebSockets development packages, CMake and a C++20 compiler. Engine setup is separate: `scripts/setup-cef.sh` provisions CEF; `scripts/setup-ladybird --build` provisions and builds clean pinned upstream Ladybird, together with its external worker. See engine directories for current build state. `DERP_CHROMIUM_WORKER` and `DERP_LADYBIRD_WORKER` can specify worker executables. Missing engines are reported, never substituted.
 
 The launcher starts the shared workspace and desktop. Agent credentials are generated locally, never committed. Local data and evidence live in `.local/`. The desktop owns browser workers; closing it shuts down project servers.
 

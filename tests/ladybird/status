@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-import json, os, pathlib, subprocess, tempfile
+import json, os, pathlib, subprocess, tempfile, time
 root = pathlib.Path(__file__).resolve().parents[2]
 binary = root / '.local/engines/ladybird/build-upstream/bin/derp-ladybird'
 def run(requests):
     with tempfile.TemporaryDirectory() as directory:
-        p = subprocess.run([str(binary)], input=''.join(json.dumps(r)+'\n' for r in requests), text=True, capture_output=True, timeout=20, check=True, env={**os.environ, 'DERP_FRAME_DIR':directory,'FONTCONFIG_FILE':str(root/'tests/ladybird/fonts.conf')})
+        p = subprocess.run([str(binary)], input=''.join(json.dumps(dict(r, deadline=int(time.time()*1000)+15000))+'\n' for r in requests), text=True, capture_output=True, timeout=20, check=True, env={**os.environ, 'DERP_FRAME_DIR':directory,'FONTCONFIG_FILE':str(root/'tests/ladybird/fonts.conf')})
     return [json.loads(line) for line in p.stdout.splitlines()]
 r = run([{'id': 1, 'method': 'engine.status'}, {'id': 2, 'method': 'pane.create'}])
-assert r[0]['result']['engineVersion'] == '197c851802f23cf956800d8dfe5083e18a424490'
+assert r[0]['result']['engineVersion'] == (root / 'engines/ladybird/REVISION').read_text().strip()
 assert {'frames','input','inspection','capture','readiness','resize'} <= set(r[0]['result']['capabilities'])
 assert r[0]['result']['rendering'] is True
 assert 'error' in r[1]

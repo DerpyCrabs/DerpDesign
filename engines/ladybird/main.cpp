@@ -10,8 +10,11 @@
 #include <LibMain/Main.h>
 #include <LibURL/Parser.h>
 #include <LibWebView/Application.h>
-#include <LibWebView/ConsoleOutput.h>
+#include <LibWebView/BuildInformation.h>
+#include <LibWebCommon/WebView/ConsoleOutput.h>
 #include <LibWebView/CookieJar.h>
+#include <LibWebView/BrowsingSession.h>
+#include <LibWebView/StorageJar.h>
 #include <LibWebView/HeadlessWebView.h>
 #include <LibWebView/Utilities.h>
 #include <LibWebView/WebContentClient.h>
@@ -25,6 +28,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+#include <QTemporaryDir>
 #include <QUuid>
 #include <cstdio>
 #include <csignal>
@@ -53,7 +57,8 @@ public:
       : HeadlessWebView(move(theme), {int(std::round(w * scale)),
                                       int(std::round(h * scale))}) {
     m_device_pixel_ratio = scale;
-    initialize_client(CreateNewClient::Yes);
+    initialize_tab(Web::HTML::VisibilityState::Visible);
+    set_presents_from_cpu_memory(true);
     resize(w, h, scale);
     popup.closed = [this](std::optional<u32> choice) {
       select_dropdown_closed(choice.has_value() ? Optional<u32>(*choice)
@@ -97,17 +102,17 @@ public:
     return handled ? QString{} : send_input(*this, event, buttons, density);
   }
   Web::UIEvents::MouseButton buttons = Web::UIEvents::MouseButton::None;
-  quint64 navigationEpoch = 0, paintRevision = 0, capturePaintRevision = 0;
   QString captureKey;
+  std::shared_ptr<std::optional<QImage>> capturedFrame;
   QString inputKey, lastError;
   bool crashed = false;
   QString queryKey;
   bool querying = false;
   std::optional<QJsonObject> queryResult;
-  void focus() { client().async_set_has_focus(page_id(), true); }
+  void focus() { set_has_system_focus(true); }
   bool input_idle() const { return m_pending_input_events.is_empty(); }
   std::optional<QJsonObject> query(QString const &key,
-                                   QJsonObject const &params) {
+                                   QJsonObject const &params, bool waitForPaint) {
     if (queryKey == key && queryResult.has_value())
       return queryResult;
     if (querying)
@@ -126,6 +131,9 @@ public:
     auto token = QString::fromUtf8(QJsonDocument(QJsonObject{{"id", key}}).toJson(QJsonDocument::Compact));
     auto script = (QStringLiteral("(()=>{let text=") + inspection_script(tagged)
         + QStringLiteral(";const id=(") + token + QStringLiteral(").id;if(text.length>8388608)text=JSON.stringify({__derpQueryId:id,error:'Inspection result exceeds transport limit'});const total=Math.ceil(text.length/512);for(let index=0;index<total;index++)console.debug('__DERPDESIGN_INSPECTION__',JSON.stringify({id,index,total,data:text.slice(index*512,(index+1)*512)}));})()")).toUtf8();
+    // Capture after WebContent has handed the updated display list to the compositor.
+    if (waitForPaint)
+      script = "requestAnimationFrame(()=>requestAnimationFrame(()=>{" + script + "}))";
     run_javascript(
         MUST(String::from_utf8(StringView(script.constData(), script.size()))));
     return {};
@@ -167,9 +175,11 @@ public:
   double density = 1;
   void resize(int w, int h, double scale) {
     popup.close();
+    captureKey.clear();
+    capturedFrame.reset();
     density = scale;
     m_device_pixel_ratio = scale;
-    client().async_set_device_pixel_ratio(page_id(), scale);
+    update_zoom();
     width = int(std::round(w * scale));
     height = int(std::round(h * scale));
     pixels = {};
@@ -177,13 +187,13 @@ public:
   }
   void paint() {
     if (!rendering) return;
-    auto const &front = m_client_state.front_bitmap;
-    if (!front.bitmap || front.last_painted_size.width().value() != width ||
-        front.last_painted_size.height().value() != height)
+    auto front = backing_stores().displayed_frame();
+    if (!front.has_value() || !front->shared_image_buffer || front->size != Gfx::IntSize(width, height))
       return;
-    ++paintRevision;
-    pixels = QImage(front.bitmap->scanline_u8(0), width, height,
-                    front.bitmap->pitch(), QImage::Format_ARGB32_Premultiplied)
+    auto bitmap = front->shared_image_buffer->bitmap_if_present();
+    if (!bitmap) return;
+    pixels = QImage(bitmap->scanline_u8(0), width, height,
+                    bitmap->pitch(), QImage::Format_ARGB32_Premultiplied)
                  .copy();
     pending = true;
     publish();
@@ -235,7 +245,25 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
   char qtName[] = "derp-ladybird";
   char *qtArgv[] = {qtName, nullptr};
   QGuiApplication qtApplication(qtArgc, qtArgv);
-  auto app = TRY(AdapterApplication::create(arguments));
+  auto profilePath = qgetenv("DERP_LADYBIRD_PROFILE");
+  std::optional<QTemporaryDir> standaloneProfile;
+  if (profilePath.isEmpty()) {
+    standaloneProfile.emplace("/tmp/derp-ladybird-XXXXXX");
+    if (!standaloneProfile->isValid())
+      return Error::from_string_literal("Unable to create Ladybird profile");
+    profilePath = standaloneProfile->path().toUtf8();
+  }
+  char profileOption[] = "--profile-path";
+  std::vector<char *> workerArgv(arguments.argv, arguments.argv + arguments.argc);
+  workerArgv.insert(workerArgv.end(), {profileOption, profilePath.data(), nullptr});
+  Vector<StringView> workerArgs;
+  for (auto argument : arguments.strings)
+    workerArgs.append(argument);
+  workerArgs.append("--profile-path"sv);
+  workerArgs.append(StringView(profilePath.constData(), profilePath.size()));
+  auto app = TRY(AdapterApplication::create({arguments.argc + 2, workerArgv.data(), workerArgs.span()}));
+  auto version = QString::fromLatin1(WebView::LADYBIRD_COMMIT.characters_without_null_termination(),
+                                     WebView::LADYBIRD_COMMIT.length());
   auto stderr_filter = ProtocolStderrFilter::create();
   auto theme = TRY(Gfx::load_system_theme(
       LexicalPath::join(WebView::s_ladybird_resource_root, "themes"sv,
@@ -263,8 +291,10 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
           it->second->finish_query();
         if (it->second->inputKey == key)
           it->second->inputKey.clear();
-        if (it->second->captureKey == key)
+        if (it->second->captureKey == key) {
           it->second->captureKey.clear();
+          it->second->capturedFrame.reset();
+        }
       }
       error("deadline", "Request deadline expired");
     } else if (method == "session.visibility") {
@@ -275,7 +305,7 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
       response["result"] = QJsonObject{
           {"engine", "ladybird"},
           {"available", true},
-          {"engineVersion", "197c851802f23cf956800d8dfe5083e18a424490"},
+          {"engineVersion", version},
           {"rendering", true},
           {"capabilities",
            QJsonArray{"frames", "resize", "capture", "input", "inspection",
@@ -314,9 +344,9 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
         }
       }
       panes.clear();
-      WebView::Application::cookie_jar().expire_cookies_accessed_since(
+      WebView::Application::default_session().cookie_jar->expire_cookies_accessed_since(
           UnixDateTime::from_seconds_since_epoch(0));
-      WebView::Application::storage_jar().remove_items_accessed_since(
+      WebView::Application::default_session().storage_jar->remove_items_accessed_since(
           UnixDateTime::from_seconds_since_epoch(0));
       generation = p["generation"].toInt();
       for (auto value : p["panes"].toArray()) {
@@ -355,18 +385,20 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
                     view->lastError.toUtf8().constData());
           }
         };
-        view->on_web_content_crashed = [view] {
+        view->start_sending_console_output(true, true);
+        view->on_web_content_crashed = [view](auto) {
           view->crashed = true;
           view->lastError = "WebContent process crashed";
         };
-        view->on_load_start = [view](auto const &, bool) {
+        view->on_load_start = [view]() {
           view->popup.close();
           view->loaded = false;
           // Automatic crash-page navigation must not hide the failed renderer.
           if (!view->crashed)
             view->lastError.clear();
           view->pixels = {};
-          ++view->navigationEpoch;
+          view->captureKey.clear();
+          view->capturedFrame.reset();
           view->finish_query();
         };
         view->on_ready_to_paint = [view] { view->paint(); };
@@ -466,7 +498,7 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
         options["mode"] = method == "pane.ready" ? "ready" : "inspect";
         auto key = QString::fromUtf8(QJsonDocument(QJsonArray{request["id"]})
                                          .toJson(QJsonDocument::Compact));
-        auto result = pane.query(key, options);
+        auto result = pane.query(key, options, method == "pane.capture");
         if (!result.has_value())
           return false;
         (*result)["selectPopup"] = pane.popup.snapshot();
@@ -483,22 +515,34 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
         else {
           if (pane.captureKey != key) {
             pane.captureKey = key;
-            pane.capturePaintRevision = pane.paintRevision;
-            // Upstream's fixed debug action leaves line boxes disabled and
-            // invalidates the traversable paint tree without touching DOM/CSS.
-            pane.debug_request("set-line-box-borders", "off");
+            pane.capturedFrame = std::make_shared<std::optional<QImage>>();
+            pane.take_frame_snapshot({}, [frame = pane.capturedFrame](Optional<Gfx::ShareableBitmap> snapshot) {
+              QImage image;
+              if (snapshot.has_value() && snapshot->bitmap()) {
+                auto& bitmap = *snapshot->bitmap();
+                image = QImage(bitmap.scanline_u8(0), bitmap.width(), bitmap.height(),
+                               bitmap.pitch(), QImage::Format_ARGB32_Premultiplied).copy();
+              }
+              *frame = std::move(image);
+            });
+          }
+          if (!pane.capturedFrame->has_value())
+            return false;
+          auto image = std::move(**pane.capturedFrame);
+          pane.capturedFrame.reset();
+          pane.captureKey.clear();
+          if (image.size() != QSize(pane.width, pane.height)) {
+            pane.finish_query();
             return false;
           }
-          if (pane.paintRevision <= pane.capturePaintRevision)
-            return false;
-          pane.captureKey.clear();
+          pane.popup.draw(image, pane.density);
           QByteArray png;
           QBuffer buffer(&png);
           buffer.open(QIODevice::WriteOnly);
-          pane.composed().save(&buffer, "PNG");
+          image.save(&buffer, "PNG");
           response["result"] = QJsonObject{
               {"generation", generation},
-              {"engineVersion", "197c851802f23cf956800d8dfe5083e18a424490"},
+              {"engineVersion", version},
               {"pngBase64", QString::fromLatin1(png.toBase64())},
               {"inspection", *result}};
         }
@@ -511,7 +555,7 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments) {
     return true;
   };
   RefPtr<Core::Timer> pending_timer;
-  pending_timer = Core::Timer::create_repeating(5, [&] {
+  pending_timer = Core::Timer::create_repeating(AK::Duration::from_milliseconds(5), [&] {
     auto requests = std::move(pending);
     pending.clear();
     for (auto const &request : requests)

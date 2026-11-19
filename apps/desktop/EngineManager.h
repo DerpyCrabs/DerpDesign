@@ -7,6 +7,8 @@
 #include <QElapsedTimer>
 #include <QPointer>
 #include <QWindow>
+#include <QTemporaryDir>
+#include <memory>
 #include <functional>
 class EngineManager : public QObject {
     Q_OBJECT
@@ -35,7 +37,7 @@ private:
     void updateWorkerRendering(const QString& key);
     QPointer<QWindow> m_renderWindow;
     bool m_renderVisible = true; // Headless automation has no window to hide.
-    struct Worker { QProcess* process = nullptr; QByteArray buffer; QString directory; QString engine; qint64 processGroup = 0; bool rendering = true; };
+    struct Worker { QProcess* process = nullptr; QByteArray buffer; QString directory; QString engine; qint64 processGroup = 0; bool rendering = true; std::shared_ptr<QTemporaryDir> profile; };
     struct Pending { QString engine; Callback callback; };
     QHash<QString, Worker> m_workers;
     QHash<QString, Pending> m_pending;

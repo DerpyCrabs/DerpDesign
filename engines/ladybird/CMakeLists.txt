@@ -1,6 +1,6 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 add_executable(derp-ladybird main.cpp)
-target_link_libraries(derp-ladybird PRIVATE LibWebView LibMain Qt::Core Qt::Gui)
+target_link_libraries(derp-ladybird PRIVATE LibWebView LibMain LibCore LibGfx LibIPC LibTextCodec LibURL Qt::Core Qt::Gui)
 function(derp_finalize)
     foreach(property INCLUDE_DIRECTORIES COMPILE_OPTIONS COMPILE_DEFINITIONS)
         get_directory_property(values DIRECTORY "${CMAKE_SOURCE_DIR}/UI/Qt" ${property})

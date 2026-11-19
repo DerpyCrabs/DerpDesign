@@ -1,6 +1,6 @@
 # Ladybird integration and bug triage
 
-DerpDesign links an external worker to pristine upstream Ladybird commit `197c851802f23cf956800d8dfe5083e18a424490`. `scripts/setup-ladybird` verifies the downloaded archive and compares the source tree. Rendering uses upstream LibWebView/WebContent; the worker supplies the event loop, viewport/DPR, input translation, bitmap transport, popup composition and read-only inspection. Those adapter responsibilities can cause defects independently of upstream.
+DerpDesign links an external worker to pristine upstream Ladybird commit `22ab1ff0ea76ff948caf1145f87f49431e7f6cc3`. `scripts/setup-ladybird` verifies the downloaded archive and compares the source tree. Rendering uses upstream LibWebView/WebContent; the worker supplies the event loop, viewport/DPR, input translation, bitmap transport, popup composition and read-only inspection. Those adapter responsibilities can cause defects independently of upstream.
 
 Do not classify every difference from Chromium as a Ladybird bug. First reproduce the same reduced page with the standalone upstream binary, matching viewport, DPR, fonts, theme, focus and input. Check a current upstream build before reporting a pinned-revision issue. Keep local harness mocks/build transforms out of the reduction unless they are essential to reproduce the web-platform behavior.
 

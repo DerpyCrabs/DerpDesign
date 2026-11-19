@@ -1,7 +1,7 @@
 # Ladybird worker
 
 The worker links to pristine upstream Ladybird commit
-`197c851802f23cf956800d8dfe5083e18a424490` through an external CMake adapter.
+`22ab1ff0ea76ff948caf1145f87f49431e7f6cc3` through an external CMake adapter.
 It uses LibWebView/WebContent for rendering and runs a separate process and
 storage profile for each pane. No upstream source patches are applied.
 
@@ -11,7 +11,6 @@ From the repository root:
 
 ```sh
 scripts/setup-ladybird --build
-scripts/setup-ladybird-adapter
 ```
 
 The setup script verifies the upstream archive checksum and source tree, installs
